@@ -1,0 +1,1564 @@
+<!DOCTYPE html>
+<html lang="zh-CN" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>PDR Tracker Prototype (Expanded)</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.9.1/chart.min.js"></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;700;900&family=Roboto:wght@300;400;500;700&display=swap');
+        
+        body {
+            background-color: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            font-family: 'Roboto', sans-serif;
+            overflow: hidden;
+            color: white;
+        }
+
+        .app-container {
+            width: 393px; /* Standard Android width */
+            height: 852px; /* Standard Android height */
+            position: relative;
+            background: #030712;
+            overflow: hidden;
+            border-radius: 24px; /* Less rounded than iOS */
+            box-shadow: 0 0 0 10px #1f2937, 0 20px 40px rgba(0,0,0,0.5);
+            background-image: radial-gradient(circle at center, transparent 0%, #030712 100%), 
+                              radial-gradient(circle at 10% 20%, rgba(255,255,255,0.03) 1px, transparent 1px),
+                              radial-gradient(circle at 90% 80%, rgba(255,255,255,0.03) 1px, transparent 1px),
+                              radial-gradient(circle at 50% 50%, rgba(255,255,255,0.03) 1px, transparent 1px);
+            background-size: 100% 100%, 15px 15px, 20px 20px, 10px 10px;
+        }
+
+        /* Android status bar and navigation bar */
+        .android-status-bar {
+            height: 32px;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0 16px;
+            font-size: 12px;
+            color: white;
+            z-index: 50;
+            position: relative;
+        }
+        
+        .hole-punch {
+            position: absolute;
+            top: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 16px;
+            height: 16px;
+            background-color: #000;
+            border-radius: 50%;
+            box-shadow: inset 0 0 4px rgba(255,255,255,0.1);
+        }
+
+        .android-nav-bar {
+            height: 24px;
+            width: 100%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 50;
+            position: relative;
+        }
+        .nav-pill {
+            width: 60px;
+            height: 4px;
+            background-color: rgba(255,255,255,0.4);
+            border-radius: 2px;
+        }
+
+        .dark-map-tiles {
+            filter: invert(100%) hue-rotate(180deg) brightness(80%) contrast(120%) grayscale(80%);
+        }
+
+        .safe-area-top { height: 32px; width: 100%; }
+        .safe-area-bottom { height: 24px; width: 100%; }
+
+        .screen {
+            left: 0;
+            width: 100%;
+            height: 100%;
+            display: none;
+            flex-direction: column;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            z-index: 10;
+        }
+
+        .screen.active {
+            display: flex;
+            opacity: 1;
+            z-index: 20;
+        }
+
+        .font-tech { font-family: 'Orbitron', sans-serif; }
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .glow-blue { box-shadow: 0 0 15px rgba(59, 130, 246, 0.5); }
+        .glow-cyan { box-shadow: 0 0 15px rgba(6, 182, 212, 0.5); }
+        .glow-text-cyan { text-shadow: 0 0 8px rgba(6, 182, 212, 0.8); }
+
+        .grid-bg {
+            background-image: linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+            70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+            100% { transform: scale(0.8); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        .pulse-dot { animation: pulse-ring 2s infinite; }
+
+        /* Toast Message */
+        .toast-msg {
+            position: absolute;
+            bottom: 80px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(55, 65, 81, 0.95);
+            color: white;
+            padding: 10px 20px;
+            border-radius: 20px;
+            font-size: 14px;
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            z-index: 100;
+            white-space: nowrap;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        }
+        .toast-msg.show {
+            opacity: 1;
+        }
+
+        /* Material Design inspired elements */
+        .md-ripple {
+            position: relative;
+            overflow: hidden;
+        }
+        
+        /* Custom Select styling */
+        .mode-select {
+            appearance: none;
+            background: transparent;
+            border: none;
+            color: #22d3ee;
+            font-weight: bold;
+            font-size: 12px;
+            padding-right: 15px;
+            cursor: pointer;
+            outline: none;
+            text-align: center;
+        }
+        .mode-select option {
+            background: #1f2937;
+            color: white;
+        }
+
+        /* Android Top Notch Area (simulated) */
+        .toggle-checkbox:checked {
+            right: 0;
+            border-color: #3b82f6;
+        }
+        .toggle-checkbox:checked + .toggle-label {
+            background-color: #3b82f6;
+        }
+
+        /* Compass styling */
+        .compass-ring {
+            background: conic-gradient(from 0deg, #111827, #1f2937, #111827);
+            border-radius: 50%;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.8), 0 0 10px rgba(34,211,238,0.2);
+        }
+        
+        /* Dark mode filter for map tiles */
+        .leaflet-tile {
+            filter: invert(100%) hue-rotate(180deg) brightness(90%) contrast(90%);
+        }
+
+        .dev-menu {
+            position: absolute;
+            right: -180px;
+            top: 20px;
+            background: #1f2937;
+            padding: 10px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            z-index: 100;
+        }
+        .dev-menu button {
+            background: #374151;
+            color: white;
+            border: none;
+            padding: 8px 12px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            text-align: left;
+        }
+        .dev-menu button:hover { background: #4b5563; }
+    </style>
+</head>
+<body onload="loadSettings()">
+
+    <div class="dev-menu">
+        <div class="text-xs text-gray-400 mb-2 uppercase font-bold tracking-wider">切换界面 (1-7)</div>
+        <button onclick="showScreen('screen-splash')">1. 启动与引导页</button>
+        <button onclick="showScreen('screen-main')">2. 主屏幕(航迹)</button>
+        <button onclick="showScreen('screen-sensors')">3. 传感器数据</button>
+        <button onclick="showScreen('screen-calibration')">4. 校准与零速修正</button>
+        <button onclick="showScreen('screen-history')">5. 历史轨迹</button>
+        <div class="border-t border-gray-600 my-1"></div>
+        <button onclick="showScreen('screen-settings')" class="text-cyan-300">6. 高级算法设置 (New)</button>
+        <button onclick="showScreen('screen-posture')" class="text-cyan-300">7. 3D姿态与罗盘 (New)</button>
+    </div>
+
+    <div class="app-container" id="app">
+        
+        <!-- Toast Container -->
+        <div id="toast" class="toast-msg">刀盾目前没有资金购买这些载具QAQ</div>
+        
+        <!-- ==================== SCREEN 5: SPLASH ==================== -->
+        <div id="screen-splash" class="screen active bg-gradient-to-b from-[#020617] to-[#0f172a]">
+            <div class="safe-area-top"></div>
+            <div class="absolute inset-0 overflow-hidden opacity-20 pointer-events-none">
+                <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M50,100 C150,200 100,400 300,500 S 50,700 200,800" fill="none" stroke="#38bdf8" stroke-width="2" stroke-dasharray="10 10">
+                        <animate attributeName="stroke-dashoffset" from="100" to="0" dur="3s" repeatCount="indefinite" />
+                    </path>
+                </svg>
+            </div>
+            <div class="flex-1 flex flex-col items-center justify-center p-8 relative z-10">
+                <div class="relative w-48 h-48 mb-12 flex items-center justify-center">
+                    <div class="absolute inset-0 border border-blue-500/30 rounded-full animate-[spin_10s_linear_infinite]"></div>
+                    <div class="absolute inset-4 border-t-2 border-r-2 border-cyan-400/60 rounded-full animate-[spin_7s_linear_infinite_reverse]"></div>
+                    <div class="w-20 h-20 rounded-full bg-blue-600/20 glass-panel flex items-center justify-center glow-blue">
+                        <i class="fa-solid fa-location-crosshairs text-3xl text-cyan-300"></i>
+                    </div>
+                </div>
+                <h1 class="text-4xl font-bold font-tech text-white mb-2 tracking-wider glow-text-cyan">PDR Tracker</h1>
+                <div class="text-[11px] text-gray-300 text-left overflow-y-auto max-h-48 p-4 glass-panel rounded-xl mt-4 leading-relaxed">
+                    <p class="mb-2 text-cyan-400 font-bold">主要功能：</p>
+                    <p class="mb-2"><strong><i class="fa-solid fa-shoe-prints text-green-400"></i> 计步与步长自适应</strong><br>精准记录步数，并基于 Weinberg 算法动态估算每一步的真实步长。</p>
+                    <p class="mb-2"><strong><i class="fa-solid fa-compass text-blue-400"></i> AHRS 姿态航向推算</strong><br>通过设备传感器构建姿态矩阵，实时推算你的真北航向、俯仰角与横滚角。</p>
+                    <p class="mb-2"><strong><i class="fa-solid fa-map-location-dot text-purple-400"></i> 真实地图航迹渲染</strong><br>结合 PDR 算法，在真实的 Leaflet 地图上实时绘制你的行走轨迹。</p>
+                    <p><strong><i class="fa-solid fa-clock-rotate-left text-orange-400"></i> 历史轨迹记录与回放</strong><br>随时保存当前轨迹，并在历史记录中回放查看当时的时间、距离与具体路线。</p>
+                </div>
+            </div>
+            <div class="pb-12 px-8 z-10">
+                <button onclick="startApp()" class="w-full py-4 rounded-full bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-bold text-lg shadow-[0_0_20px_rgba(6,182,212,0.4)] hover:opacity-90 transition-all flex justify-center items-center gap-2">
+                    开始追踪 <i class="fa-solid fa-arrow-right text-sm"></i>
+                </button>
+            </div>
+            <div class="safe-area-bottom"></div>
+            <!-- Android Nav Bar -->
+            <div class="android-nav-bar"><div class="nav-pill"></div></div>
+        </div>
+
+        <!-- ==================== SCREEN 1: MAIN SCREEN ==================== -->
+        <div id="screen-main" class="screen relative">
+            <div class="safe-area-top"></div>
+            <div class="px-5 py-3 flex justify-between items-center glass-panel mx-4 mt-2 rounded-2xl z-20">
+                <div class="font-bold text-sm tracking-wide flex items-center gap-2">
+                    <i class="fa-solid fa-route text-cyan-400"></i> IMU航迹推算
+                </div>
+                <div class="flex items-center gap-4">
+                    <div class="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_5px_#22c55e]"></div>
+                    <i class="fa-solid fa-compass text-gray-300 cursor-pointer hover:text-cyan-400" onclick="showScreen('screen-posture')" title="3D Posture"></i>
+                    <i class="fa-solid fa-gear text-gray-300 cursor-pointer hover:text-cyan-400" onclick="showScreen('screen-settings')" title="Settings"></i>
+                </div>
+            </div>
+            <div class="flex-1 relative mt-4 mx-4 mb-4 rounded-3xl overflow-hidden border border-white/5 bg-[#0a0f18] grid-bg">
+                <div id="map" class="w-full h-full absolute inset-0 z-0"></div>
+                
+                <!-- Locate Button -->
+                <button onclick="locateCurrentPosition()" class="absolute bottom-12 right-3 w-10 h-10 bg-gray-800/80 backdrop-blur-md rounded-full border border-white/10 flex items-center justify-center text-cyan-400 z-10 shadow-lg hover:bg-gray-700/80 transition-colors">
+                    <i class="fa-solid fa-location-crosshairs text-lg"></i>
+                </button>
+
+                <div class="absolute bottom-3 right-3 bg-black/40 backdrop-blur-sm px-2 py-1 rounded text-[10px] text-gray-400 border border-white/10 flex items-center gap-2 z-10 pointer-events-none">
+                    <div class="w-10 h-[1px] bg-gray-400 relative">
+                        <div class="absolute left-0 -top-1 w-[1px] h-2 bg-gray-400"></div>
+                        <div class="absolute right-0 -top-1 w-[1px] h-2 bg-gray-400"></div>
+                    </div>
+                    AHRS + PDR Map (North Up)
+                </div>
+            </div>
+            <div class="px-4 pb-6 flex flex-col gap-4 z-20">
+                <div class="grid grid-cols-4 gap-2">
+                    <div class="glass-panel rounded-xl p-2 flex flex-col items-center justify-center cursor-pointer hover:bg-white/10" onclick="showScreen('screen-sensors')">
+                        <div class="text-[10px] text-gray-400 mb-1">步数</div>
+                        <div id="stat-steps" class="font-tech text-lg font-bold text-white">0</div>
+                    </div>
+                    <div class="glass-panel rounded-xl p-2 flex flex-col items-center justify-center cursor-pointer hover:bg-white/10" onclick="showScreen('screen-sensors')">
+                        <div class="text-[10px] text-gray-400 mb-1">距离(m)</div>
+                        <div id="stat-dist" class="font-tech text-lg font-bold text-white">0</div>
+                    </div>
+                    <div class="glass-panel rounded-xl p-2 flex flex-col items-center justify-center">
+                        <div class="text-[10px] text-gray-400 mb-1">步长(m)</div>
+                        <div id="stat-steplen" class="font-tech text-lg font-bold text-white">0.00</div>
+                    </div>
+                    <div class="glass-panel rounded-xl p-2 flex flex-col items-center justify-center">
+                        <div class="text-[10px] text-gray-400 mb-1">步频(步/分)</div>
+                        <div id="stat-freq" class="font-tech text-lg font-bold text-white">0</div>
+                    </div>
+                </div>
+                <div class="flex justify-center relative">
+                    <div class="glass-panel rounded-full px-4 py-1.5 flex items-center gap-2 border-cyan-500/30">
+                        <i id="mode-icon" class="fa-solid fa-person-walking text-cyan-400 text-sm"></i>
+                        <select id="motion-mode-select" class="mode-select tracking-widest" onchange="handleModeChange(this)">
+                            <option value="walk">步行</option>
+                            <option value="car">汽车</option>
+                            <option value="moto">摩托车</option>
+                            <option value="boat">船</option>
+                            <option value="plane">飞机</option>
+                            <option value="rocket">火箭</option>
+                            <option value="spaceship">宇宙飞船</option>
+                        </select>
+                        <i class="fa-solid fa-caret-down text-cyan-400 text-[10px] absolute right-4 pointer-events-none"></i>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-3 mt-2">
+                    <button id="main-action-btn" onclick="toggleTracking(this)" class="w-full py-3.5 rounded-full bg-gradient-to-r from-blue-600 to-cyan-500 text-white font-bold text-sm shadow-[0_0_15px_rgba(6,182,212,0.3)] md-ripple">
+                        停止
+                    </button>
+                    <button onclick="resetTrajectory()" class="w-full py-3.5 rounded-full bg-transparent border-2 border-red-500 text-red-500 font-bold text-sm shadow-[inset_0_0_10px_rgba(239,68,68,0.2),_0_0_10px_rgba(239,68,68,0.2)] md-ripple">
+                        重置并保存
+                    </button>
+                    <button onclick="showScreen('screen-calibration')" class="w-full py-3.5 rounded-full bg-transparent border-2 border-orange-500 text-orange-500 font-bold text-sm shadow-[inset_0_0_10px_rgba(249,115,22,0.2),_0_0_10px_rgba(249,115,22,0.2)] md-ripple">
+                        零速修正
+                    </button>
+                    <button onclick="showScreen('screen-history')" class="w-full py-3.5 rounded-full bg-gray-800 text-gray-300 font-bold text-sm hover:bg-gray-700 transition-colors md-ripple">
+                        历史记录
+                    </button>
+                </div>
+            </div>
+            <div class="safe-area-bottom"></div>
+            <!-- Android Nav Bar -->
+            <div class="android-nav-bar"><div class="nav-pill"></div></div>
+        </div>
+
+        <!-- ==================== SCREEN 2, 3, 4, 5 ARE PRESERVED ==================== -->
+        <!-- (Reusing the previous definitions for 2, 3, 4 briefly to keep file complete but focusing on new screens) -->
+        <div id="screen-sensors" class="screen bg-[#050B14]">
+            <div class="safe-area-top"></div>
+            <div class="glass-panel h-14 flex items-center px-4 relative z-20 border-b border-white/5">
+                <button onclick="showScreen('screen-main')" class="text-gray-300 p-2"><i class="fa-solid fa-chevron-left"></i></button>
+                <div class="flex-1 text-center font-bold text-base tracking-wide">实时传感器波形</div>
+                <div class="w-8"></div>
+            </div>
+            <div class="flex-1 flex flex-col p-4 gap-4 overflow-hidden">
+                <div class="flex-1 bg-[#111827] rounded-2xl border border-white/5 relative overflow-hidden flex flex-col">
+                    <div class="px-4 py-2 text-xs text-gray-400 font-bold border-b border-white/5 flex justify-between items-center z-10">
+                        <span>三轴加速度计 (m/s²)</span>
+                        <div class="flex gap-2"><span class="text-red-400">X</span><span class="text-green-400">Y</span><span class="text-blue-400">Z</span></div>
+                    </div>
+                    <div class="flex-1 p-2 relative z-10"><canvas id="accelChart"></canvas></div>
+                </div>
+                <div class="flex-1 bg-[#111827] rounded-2xl border border-white/5 relative overflow-hidden flex flex-col">
+                    <div class="px-4 py-2 text-xs text-gray-400 font-bold border-b border-white/5 flex justify-between items-center z-10">
+                        <span>三轴陀螺仪 (rad/s)</span>
+                        <div class="flex gap-2"><span class="text-red-400">X</span><span class="text-green-400">Y</span><span class="text-blue-400">Z</span></div>
+                    </div>
+                    <div class="flex-1 p-2 relative z-10"><canvas id="gyroChart"></canvas></div>
+                </div>
+            </div>
+            <div class="safe-area-bottom"></div>
+        </div>
+
+        <div id="screen-calibration" class="screen bg-[#050B14]">
+            <div class="safe-area-top"></div>
+            <div class="glass-panel h-14 flex items-center px-4 relative z-20 border-b border-white/5">
+                <button onclick="showScreen('screen-main')" class="text-gray-300 p-2"><i class="fa-solid fa-chevron-left"></i></button>
+                <div class="flex-1 text-center font-bold text-base tracking-wide">传感器校准</div>
+                <div class="w-8"></div>
+            </div>
+            
+            <div class="flex-1 flex flex-col items-center p-6 gap-6 overflow-y-auto">
+                <!-- Circular Dial -->
+                <div class="relative w-48 h-48 mt-8">
+                    <svg class="absolute inset-0 w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                        <circle cx="50" cy="50" r="45" fill="none" stroke="#1f2937" stroke-width="2" stroke-dasharray="2 4"/>
+                        <circle cx="50" cy="50" r="45" fill="none" stroke="#3b82f6" stroke-width="4" stroke-dasharray="30 252" stroke-dashoffset="-120"/>
+                    </svg>
+                    <div class="absolute inset-2 rounded-full border-4 border-[#1f2937] bg-[#111827] flex flex-col items-center justify-center shadow-[inset_0_0_20px_rgba(0,0,0,1)]">
+                        <div class="text-3xl font-tech font-bold text-blue-400 glow-text-cyan">9.81</div>
+                        <div class="text-[10px] text-gray-500">m/s²</div>
+                    </div>
+                    <div class="absolute top-0 left-1/2 w-1 h-3 bg-cyan-400 transform -translate-x-1/2 origin-bottom shadow-[0_0_8px_#22d3ee]"></div>
+                </div>
+
+                <div id="calib-status-text" class="text-sm text-gray-300 tracking-widest text-center mt-2 animate-pulse">
+                    请将手机静置于水平面
+                </div>
+
+                <!-- Progress Bars -->
+                <div class="w-full mt-6 space-y-5">
+                    <div>
+                        <div class="flex justify-between text-xs mb-2">
+                            <span class="text-gray-400">加速度计偏置校准</span>
+                            <span id="calib-accel-text" class="text-green-400"><i class="fa-solid fa-check"></i> 100%</span>
+                        </div>
+                        <div class="h-2 w-full bg-gray-800 rounded-full overflow-hidden">
+                            <div id="calib-accel-bar" class="h-full bg-green-500 shadow-[0_0_10px_#22c55e] transition-all duration-1000" style="width: 100%"></div>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="flex justify-between text-xs mb-2">
+                            <span class="text-gray-400">陀螺仪零偏估计</span>
+                            <span id="calib-gyro-text" class="text-blue-400">75%</span>
+                        </div>
+                        <div class="h-2 w-full bg-gray-800 rounded-full overflow-hidden">
+                            <div id="calib-gyro-bar" class="h-full bg-blue-500 shadow-[0_0_10px_#3b82f6] transition-all duration-1000" style="width: 75%"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Info Card -->
+                <div class="glass-panel rounded-xl p-4 w-full mt-auto mb-6">
+                    <div class="flex items-start gap-3">
+                        <i class="fa-solid fa-circle-info text-blue-400 mt-0.5"></i>
+                        <div class="text-xs text-gray-400 leading-relaxed">
+                            <strong class="text-gray-200">零速修正 (ZUPT)</strong><br>
+                            当检测到处于静止状态时，系统会将当前速度重置为零，以消除IMU随时间累积的积分漂移误差，显著提高航迹推算精度。
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Buttons -->
+                <div class="w-full flex gap-4 mb-4">
+                    <button id="start-calib-btn" onclick="startCalibration()" class="flex-1 py-3.5 rounded-full bg-gray-800 text-gray-300 font-bold text-sm border border-gray-600 hover:bg-gray-700 transition-colors md-ripple">
+                        开始校准
+                    </button>
+                    <button onclick="showScreen('screen-main')" class="flex-1 py-3.5 rounded-full bg-blue-600 text-white font-bold text-sm shadow-[0_0_15px_rgba(37,99,235,0.4)] md-ripple">
+                        应用并返回
+                    </button>
+                </div>
+            </div>
+            <div class="safe-area-bottom"></div>
+        </div>
+
+        <div id="screen-history" class="screen bg-[#050B14]">
+            <div class="safe-area-top"></div>
+            <div class="glass-panel h-14 flex items-center px-4 relative z-20 border-b border-white/5">
+                <button onclick="showScreen('screen-main')" class="text-gray-300 p-2"><i class="fa-solid fa-chevron-left"></i></button>
+                <div class="flex-1 text-center font-bold text-base tracking-wide">历史轨迹</div>
+                <button class="w-8 text-gray-300" onclick="toggleEmptyState()"><i class="fa-solid fa-trash-can text-sm"></i></button>
+            </div>
+            
+            <div class="flex-1 flex flex-col overflow-hidden relative">
+                <!-- List View -->
+                <div id="history-list" class="flex-1 overflow-y-auto p-4 space-y-3 hidden">
+                </div>
+
+                <!-- Empty State -->
+                <div id="history-empty" class="absolute inset-0 flex flex-col items-center justify-center p-6 text-center">
+                    <div class="w-24 h-24 mb-6 opacity-20">
+                        <svg viewBox="0 0 100 100" class="w-full h-full text-white fill-current">
+                            <path d="M30,70 C30,70 20,50 35,40 C50,30 40,60 40,60" fill="none" stroke="currentColor" stroke-width="4" stroke-dasharray="4 4"/>
+                            <path d="M60,80 C60,80 50,60 65,50 C80,40 70,70 70,70" fill="none" stroke="currentColor" stroke-width="4" stroke-dasharray="4 4"/>
+                            <circle cx="25" cy="30" r="5" />
+                            <circle cx="55" cy="40" r="5" />
+                        </svg>
+                    </div>
+                    <div class="text-gray-400 text-sm">暂无历史记录</div>
+                </div>
+
+                <!-- Fixed Bottom Button -->
+                <div class="p-6 pt-2 bg-gradient-to-t from-[#050B14] to-transparent z-10">
+                    <button onclick="exportAllHistoryCSV()" class="w-full py-3.5 rounded-full bg-transparent border border-blue-500 text-blue-400 font-bold text-sm shadow-[inset_0_0_10px_rgba(59,130,246,0.1)] flex justify-center items-center gap-2 md-ripple">
+                        <i class="fa-solid fa-download"></i> 导出全部CSV
+                    </button>
+                </div>
+            </div>
+            <div class="safe-area-bottom"></div>
+        </div>
+
+        <!-- ==================== SCREEN 8: HISTORY DETAIL (NEW) ==================== -->
+        <div id="screen-history-detail" class="screen bg-[#050B14]">
+            <div class="safe-area-top"></div>
+            <div class="glass-panel h-14 flex items-center px-4 relative z-20 border-b border-white/5">
+                <button onclick="showScreen('screen-history')" class="text-gray-300 p-2"><i class="fa-solid fa-chevron-left"></i></button>
+                <div class="flex-1 text-center font-bold text-base tracking-wide">轨迹详情</div>
+                <div class="w-8"></div>
+            </div>
+
+            <!-- Map/Trajectory View -->
+            <div class="flex-1 relative border-b border-white/5 bg-[#0a0f18] grid-bg overflow-hidden">
+                <div id="detail-map" class="w-full h-full absolute inset-0 z-0"></div>
+            </div>
+
+            <!-- Detail Stats -->
+            <div class="h-64 bg-[#050B14] p-5 flex flex-col gap-4 z-20 shadow-[0_-10px_20px_rgba(0,0,0,0.5)]">
+                <div class="flex justify-between items-end border-b border-white/10 pb-3">
+                    <div>
+                        <div class="text-xs text-gray-400 mb-1">记录时间</div>
+                        <div id="detail-time" class="text-lg font-bold text-white">2023-10-24 14:30</div>
+                    </div>
+                    <div class="text-right">
+                        <div class="text-xs text-gray-400 mb-1">运动模式</div>
+                        <div class="text-sm font-bold text-cyan-400"><i class="fa-solid fa-person-walking mr-1"></i>步行</div>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-3">
+                    <div class="bg-[#111827] rounded-xl p-3 flex flex-col items-center justify-center border border-white/5">
+                        <i class="fa-solid fa-route text-blue-400 mb-2"></i>
+                        <div id="detail-dist" class="font-tech text-xl font-bold text-white">0.85</div>
+                        <div class="text-[10px] text-gray-500 mt-1">总距离 (km)</div>
+                    </div>
+                    <div class="bg-[#111827] rounded-xl p-3 flex flex-col items-center justify-center border border-white/5">
+                        <i class="fa-regular fa-clock text-green-400 mb-2"></i>
+                        <div id="detail-duration" class="font-tech text-xl font-bold text-white">12:45</div>
+                        <div class="text-[10px] text-gray-500 mt-1">总时长</div>
+                    </div>
+                    <div class="bg-[#111827] rounded-xl p-3 flex flex-col items-center justify-center border border-white/5">
+                        <i class="fa-solid fa-shoe-prints text-purple-400 mb-2"></i>
+                        <div id="detail-steps" class="font-tech text-xl font-bold text-white">1,204</div>
+                        <div class="text-[10px] text-gray-500 mt-1">总步数</div>
+                    </div>
+                </div>
+
+                <button onclick="exportSingleHistoryCSV()" class="w-full mt-2 py-3 rounded-xl bg-blue-600/20 border border-blue-500/50 text-blue-400 font-bold text-sm hover:bg-blue-600/30 transition-colors md-ripple flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-share-nodes"></i> 导出单条数据
+                </button>
+            </div>
+            <div class="safe-area-bottom"></div>
+        </div>
+
+        <!-- ==================== SCREEN 6: ADVANCED SETTINGS (NEW) ==================== -->
+        <div id="screen-settings" class="screen bg-[#050B14]">
+            <div class="safe-area-top"></div>
+            
+            <!-- Nav Bar -->
+            <div class="glass-panel h-14 flex items-center px-4 relative z-20 border-b border-white/5">
+                <button onclick="showScreen('screen-main')" class="text-gray-300 p-2"><i class="fa-solid fa-chevron-left"></i></button>
+                <div class="flex-1 text-center font-bold text-base tracking-wide">高级算法设置</div>
+                <div class="w-8"></div>
+            </div>
+
+            <div class="flex-1 overflow-y-auto p-4 space-y-5 pb-10">
+                
+                <!-- Section 1: Attitude Estimation -->
+                <div class="glass-panel rounded-2xl p-4">
+                    <div class="text-sm font-bold text-cyan-400 mb-3 flex items-center gap-2">
+                        <i class="fa-solid fa-cube"></i> 姿态解算算法 (Attitude)
+                    </div>
+                    <div class="space-y-3">
+                        <label class="flex items-center gap-3 p-2 rounded-lg bg-white/5 border border-cyan-500/30">
+                            <input type="radio" name="attitude" value="ekf" onchange="saveSettings()" class="text-cyan-500 bg-gray-800 border-gray-600 focus:ring-cyan-500 h-4 w-4">
+                            <div class="flex-1">
+                                <div class="text-sm text-white">扩展卡尔曼滤波 (EKF)</div>
+                                <div class="text-[10px] text-gray-400">高精度，计算量大，抗噪好</div>
+                            </div>
+                        </label>
+                        <label class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 transition-colors">
+                            <input type="radio" name="attitude" value="madgwick" checked onchange="saveSettings()" class="text-cyan-500 bg-gray-800 border-gray-600 focus:ring-cyan-500 h-4 w-4">
+                            <div class="flex-1">
+                                <div class="text-sm text-white">Madgwick 滤波</div>
+                                <div class="text-[10px] text-gray-400">实时性强，适用于移动设备计算</div>
+                            </div>
+                        </label>
+                        <label class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 transition-colors">
+                            <input type="radio" name="attitude" value="mahony" onchange="saveSettings()" class="text-cyan-500 bg-gray-800 border-gray-600 focus:ring-cyan-500 h-4 w-4">
+                            <div class="flex-1">
+                                <div class="text-sm text-white">Mahony 滤波</div>
+                                <div class="text-[10px] text-gray-400">经典互补滤波，包含PI控制</div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Section 2: Stride Length Estimation -->
+                <div class="glass-panel rounded-2xl p-4">
+                    <div class="text-sm font-bold text-cyan-400 mb-3 flex items-center gap-2">
+                        <i class="fa-solid fa-shoe-prints"></i> 步长估算模型 (Stride)
+                    </div>
+                    <div class="space-y-3">
+                        <label class="flex items-center gap-3 p-2 rounded-lg bg-white/5 border border-cyan-500/30">
+                            <input type="radio" name="stride" value="horizontal" checked onchange="saveSettings()" class="text-cyan-500 bg-gray-800 border-gray-600 focus:ring-cyan-500 h-4 w-4">
+                            <div class="flex-1">
+                                <div class="text-sm text-white">水平合加速度模型</div>
+                                <div class="text-[10px] text-gray-400">基于导航系水平加速度极差 (推荐)</div>
+                            </div>
+                        </label>
+                        <label class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 transition-colors">
+                            <input type="radio" name="stride" value="weinberg" onchange="saveSettings()" class="text-cyan-500 bg-gray-800 border-gray-600 h-4 w-4">
+                            <div class="flex-1">
+                                <div class="text-sm text-white">Weinberg 模型</div>
+                                <div class="text-[10px] text-gray-400">基于垂直加速度最大最小差值</div>
+                            </div>
+                        </label>
+                        <label class="flex items-center gap-3 p-2 rounded-lg hover:bg-white/5 transition-colors">
+                            <input type="radio" name="stride" value="kim" onchange="saveSettings()" class="text-cyan-500 bg-gray-800 border-gray-600 h-4 w-4">
+                            <div class="flex-1">
+                                <div class="text-sm text-white">Kim 模型</div>
+                                <div class="text-[10px] text-gray-400">基于加速度均值，平滑性较好</div>
+                            </div>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Section 3: ZUPT Threshold -->
+                <div class="glass-panel rounded-2xl p-4">
+                    <div class="text-sm font-bold text-cyan-400 mb-3 flex items-center gap-2">
+                        <i class="fa-solid fa-sliders"></i> 零速检测阈值 (ZUPT)
+                    </div>
+                    <div class="mb-2 flex justify-between text-xs text-gray-400">
+                        <span>加速度方差阈值</span>
+                        <span id="accel-var-val" class="text-white font-tech">0.15 m/s²</span>
+                    </div>
+                    <input id="accel-var-range" type="range" min="0" max="100" value="15" class="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer mb-4 accent-cyan-500" oninput="document.getElementById('accel-var-val').innerText = (this.value/100).toFixed(2) + ' m/s²'" onchange="saveSettings()">
+                    
+                    <div class="mb-2 flex justify-between text-xs text-gray-400">
+                        <span>角速度幅值阈值</span>
+                        <span id="gyro-mag-val" class="text-white font-tech">0.40 rad/s</span>
+                    </div>
+                    <input id="gyro-mag-range" type="range" min="0" max="100" value="40" class="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500" oninput="document.getElementById('gyro-mag-val').innerText = (this.value/100).toFixed(2) + ' rad/s'" onchange="saveSettings()">
+                </div>
+
+                <!-- Section 4: Magnetometer -->
+                <div class="glass-panel rounded-2xl p-4 flex justify-between items-center">
+                    <div>
+                        <div class="text-sm font-bold text-white mb-1">磁力计抗干扰过滤</div>
+                        <div class="text-[10px] text-gray-400">室内复杂磁场环境下自动降权</div>
+                    </div>
+                    <!-- Toggle Switch -->
+                    <div class="relative inline-block w-10 mr-2 align-middle select-none transition duration-200 ease-in">
+                        <input type="checkbox" name="toggle" id="toggle1" checked onchange="saveSettings()" class="toggle-checkbox absolute block w-5 h-5 rounded-full bg-white border-4 border-gray-600 appearance-none cursor-pointer z-10 transition-all duration-300"/>
+                        <label for="toggle1" class="toggle-label block overflow-hidden h-5 rounded-full bg-gray-600 cursor-pointer transition-colors duration-300"></label>
+                    </div>
+                </div>
+
+                <button onclick="restoreDefaults()" class="w-full py-3.5 rounded-xl bg-blue-600/20 border border-blue-500/50 text-blue-400 font-bold text-sm hover:bg-blue-600/30 transition-colors md-ripple">
+                    恢复默认参数
+                </button>
+            </div>
+            <div class="safe-area-bottom"></div>
+        </div>
+
+        <!-- ==================== SCREEN 7: POSTURE & COMPASS (NEW) ==================== -->
+        <div id="screen-posture" class="screen bg-[#050B14]">
+            <div class="safe-area-top"></div>
+            
+            <!-- Nav Bar -->
+            <div class="glass-panel h-14 flex items-center px-4 relative z-20 border-b border-white/5">
+                <button onclick="showScreen('screen-main')" class="text-gray-300 p-2"><i class="fa-solid fa-chevron-left"></i></button>
+                <div class="flex-1 text-center font-bold text-base tracking-wide">3D姿态与磁场罗盘</div>
+                <div class="w-8"></div>
+            </div>
+
+            <div class="flex-1 flex flex-col items-center p-6 gap-8 overflow-y-auto">
+                
+                <!-- Compass (Yaw) -->
+                <div class="relative w-56 h-56 mt-4">
+                    <div class="absolute inset-0 compass-ring border border-white/10 flex items-center justify-center">
+                        <!-- Compass markings -->
+                        <div class="absolute inset-2 rounded-full border border-gray-700"></div>
+                        <div class="absolute top-2 text-red-500 font-bold text-sm">N</div>
+                        <div class="absolute bottom-2 text-gray-400 font-bold text-sm">S</div>
+                        <div class="absolute right-3 text-gray-400 font-bold text-sm">E</div>
+                        <div class="absolute left-3 text-gray-400 font-bold text-sm">W</div>
+                        
+                        <!-- Compass Needle -->
+                        <div id="compass-needle" class="relative w-2 h-32 flex flex-col items-center transform rotate-45 transition-transform duration-500">
+                            <div class="w-0 h-0 border-l-[6px] border-r-[6px] border-b-[60px] border-l-transparent border-r-transparent border-b-red-500"></div>
+                            <div class="w-0 h-0 border-l-[6px] border-r-[6px] border-t-[60px] border-l-transparent border-r-transparent border-t-white"></div>
+                            <div class="absolute top-1/2 left-1/2 w-3 h-3 bg-gray-900 rounded-full border-2 border-gray-400 transform -translate-x-1/2 -translate-y-1/2"></div>
+                        </div>
+                    </div>
+                    
+                    <!-- Digital Readout -->
+                    <div class="absolute -bottom-10 left-1/2 transform -translate-x-1/2 glass-panel px-4 py-1.5 rounded-full text-center border-cyan-500/30">
+                        <div class="text-xs text-gray-400">偏航角 (Yaw)</div>
+                        <div id="compass-yaw-text" class="text-lg font-tech font-bold text-cyan-400">45.2°</div>
+                    </div>
+                </div>
+
+                <!-- Pitch and Roll Dials -->
+                <div class="flex w-full justify-between gap-4 mt-12">
+                    <!-- Pitch Dial -->
+                    <div class="flex-1 glass-panel rounded-2xl p-4 flex flex-col items-center relative overflow-hidden">
+                        <div class="text-xs text-gray-400 mb-3">俯仰角 (Pitch)</div>
+                        <div class="relative w-24 h-24 rounded-full border-2 border-gray-700 bg-gray-900 flex items-center justify-center overflow-hidden">
+                            <!-- Artificial Horizon Bg -->
+                            <div id="pitch-horizon" class="absolute w-full h-[200%] bg-gradient-to-b from-blue-900 to-amber-900 transform translate-y-[10%]"></div>
+                            <div class="absolute w-full h-[1px] bg-white"></div>
+                            <!-- Crosshair -->
+                            <div class="absolute w-12 h-[2px] bg-yellow-400"></div>
+                            <div class="absolute w-[2px] h-3 bg-yellow-400"></div>
+                        </div>
+                        <div id="compass-pitch-text" class="text-sm font-tech font-bold text-white mt-3">0.0°</div>
+                    </div>
+
+                    <!-- Roll Dial -->
+                    <div class="flex-1 glass-panel rounded-2xl p-4 flex flex-col items-center relative overflow-hidden">
+                        <div class="text-xs text-gray-400 mb-3">横滚角 (Roll)</div>
+                        <div class="relative w-24 h-24 rounded-full border-2 border-gray-700 bg-gray-900 flex items-center justify-center overflow-hidden">
+                            <!-- Artificial Horizon Bg -->
+                            <div id="roll-horizon" class="absolute w-full h-full bg-gradient-to-b from-blue-900 to-amber-900 transform rotate-[15deg]"></div>
+                            <div id="roll-horizon-line" class="absolute w-full h-[1px] bg-white transform rotate-[15deg]"></div>
+                            <!-- Crosshair -->
+                            <div class="absolute w-12 h-[2px] bg-yellow-400"></div>
+                            <div class="absolute w-[2px] h-3 bg-yellow-400"></div>
+                        </div>
+                        <div id="compass-roll-text" class="text-sm font-tech font-bold text-white mt-3">0.0°</div>
+                    </div>
+                </div>
+
+                <!-- Vertical Accel & Heading -->
+                <div class="flex w-full justify-between gap-4 mt-6">
+                    <div class="flex-1 glass-panel rounded-2xl p-4 flex flex-col items-center relative overflow-hidden">
+                        <div class="text-xs text-gray-400 mb-2">垂向加速度 (g)</div>
+                        <div class="flex items-center gap-2">
+                            <i class="fa-solid fa-arrow-down-up-across-line text-blue-400"></i>
+                            <div id="posture-vaccel" class="text-xl font-tech font-bold text-white">1.00</div>
+                        </div>
+                    </div>
+                    <div class="flex-1 glass-panel rounded-2xl p-4 flex flex-col items-center relative overflow-hidden">
+                        <div class="text-xs text-gray-400 mb-2">当前航向角 (°)</div>
+                        <div class="flex items-center gap-2">
+                            <i class="fa-solid fa-location-arrow text-green-400"></i>
+                            <div id="posture-heading" class="text-xl font-tech font-bold text-white">0</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Calibration Status -->
+                <div class="w-full glass-panel rounded-xl p-3 mt-auto mb-4 flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-magnet text-orange-400"></i>
+                        <span class="text-xs text-gray-300">磁场校准状态</span>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <div class="w-2 h-2 rounded-full bg-green-500"></div>
+                        <span class="text-xs font-bold text-green-400">良好 (Level 3)</span>
+                    </div>
+                </div>
+
+            </div>
+            <div class="safe-area-bottom"></div>
+        </div>
+
+    </div>
+
+    <script>
+        // --- Toast Logic ---
+        let toastTimeout;
+        function showToast(message) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.classList.add('show');
+            clearTimeout(toastTimeout);
+            toastTimeout = setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // --- Core Tracking Logic ---
+        let isTracking = true;
+        let steps = 0;
+        let distance = 0;
+        let heading = 0; // degrees
+        
+        // Map related variables
+        let map, detailMap;
+        let trajectoryPolyline, detailPolyline;
+        let currentMarker, detailStartMarker, detailEndMarker;
+        // Default to Guilin University of Electronic Technology, Sihuan Lake Island
+        let currentLat = 25.313436; 
+        let currentLng = 110.420805; 
+        let latlngs = [];
+
+        let startTime = Date.now();
+
+        // Level 2: Adaptive Step Length (Weinberg)
+        let aVertMax = -999, aVertMin = 999;
+        let aHorizMax = -999, aHorizMin = 999;
+        let weinbergK = 0.41; 
+        
+        let lastAccelZ = 0;
+        let stepThreshold = 1.15; // g
+        let lastStepTime = 0;
+        let stepFreq = 0; // steps per minute
+        
+        // Level 3: AHRS Matrix
+        let euler = { alpha: 0, beta: 0, gamma: 0 };
+        
+        let historyData = JSON.parse(localStorage.getItem('pdr_history')) || [];
+
+        function initMaps() {
+            if(!map) {
+                // Initialize map with extreme performance optimizations
+                map = L.map('map', { 
+                    zoomControl: false, 
+                    attributionControl: false,
+                    preferCanvas: true, // Use Canvas instead of SVG for better performance
+                    fadeAnimation: false, // 禁用淡入动画，直接显示
+                    zoomAnimation: true,
+                    markerZoomAnimation: true,
+                    inertia: true,
+                    inertiaDeceleration: 3000, // 更平滑的惯性滚动
+                    zoomSnap: 0.1, // 允许小数点级别的缩放
+                    zoomDelta: 0.1
+                }).setView([currentLat, currentLng], 19);
+                
+                // 使用国内高德地图作为底图，进一步优化加载策略
+                L.tileLayer('http://wprd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&style=7&x={x}&y={y}&z={z}', {
+                    subdomains: ['1', '2', '3', '4'],
+                    maxZoom: 22,
+                    maxNativeZoom: 18, 
+                    keepBuffer: 16,     // 极限增加缓冲区，提前下载两倍屏幕的区块
+                    updateWhenIdle: false, // 移动中持续更新
+                    updateWhenZooming: true, // 缩放中持续更新
+                    updateInterval: 16, // 降低更新检查间隔到 16ms (约60fps)
+                    className: 'dark-map-tiles',
+                    crossOrigin: true // 允许跨域，利用浏览器缓存机制
+                }).addTo(map);
+                
+                // Use smoother polyline rendering
+                trajectoryPolyline = L.polyline([], {
+                    color: '#22d3ee', 
+                    weight: 4, 
+                    opacity: 0.8,
+                    smoothFactor: 1 // Optimize polyline rendering
+                }).addTo(map);
+                
+                const userIcon = L.divIcon({
+                    className: '',
+                    html: `
+                        <div id="user-arrow-container" style="position: relative; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; transform: rotate(0deg); transition: transform 0.1s ease-out;">
+                            <div style="position: absolute; top: -4px; width: 0; height: 0; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 12px solid #3b82f6;"></div>
+                            <div style="width: 12px; height: 12px; background-color: #ef4444; border-radius: 50%; border: 2px solid white; z-index: 1;"></div>
+                        </div>
+                    `,
+                    iconSize: [24, 24],
+                    iconAnchor: [12, 12]
+                });
+                currentMarker = L.marker([currentLat, currentLng], { icon: userIcon }).addTo(map);
+                
+                // Allow setting custom start point
+                map.on('click', function(e) {
+                    if (steps === 0) { // Only allow setting start point if no steps taken
+                        currentLat = e.latlng.lat;
+                        currentLng = e.latlng.lng;
+                        latlngs = [[currentLat, currentLng]];
+                        trajectoryPolyline.setLatLngs(latlngs);
+                        currentMarker.setLatLng([currentLat, currentLng]);
+                        showToast("已设置新的起点");
+                    }
+                });
+            }
+            if(!detailMap) {
+                detailMap = L.map('detail-map', { 
+                    zoomControl: false, 
+                    attributionControl: false,
+                    preferCanvas: true,
+                    fadeAnimation: false,
+                    inertia: true,
+                    inertiaDeceleration: 3000,
+                    zoomSnap: 0.1,
+                    zoomDelta: 0.1
+                }).setView([currentLat, currentLng], 19);
+                L.tileLayer('http://wprd0{s}.is.autonavi.com/appmaptile?lang=zh_cn&size=1&style=7&x={x}&y={y}&z={z}', { 
+                    subdomains: ['1', '2', '3', '4'],
+                    maxZoom: 22, 
+                    maxNativeZoom: 18,
+                    keepBuffer: 16,
+                    updateWhenIdle: false,
+                    updateWhenZooming: true,
+                    updateInterval: 16,
+                    className: 'dark-map-tiles',
+                    crossOrigin: true
+                }).addTo(detailMap);
+                detailPolyline = L.polyline([], {
+                    color: '#22d3ee', 
+                    weight: 4, 
+                    opacity: 0.8,
+                    smoothFactor: 1
+                }).addTo(detailMap);
+                detailStartMarker = L.circleMarker([0,0], { color: '#64748b', fillColor: '#64748b', fillOpacity: 1, radius: 5 }).addTo(detailMap);
+                detailEndMarker = L.circleMarker([0,0], { color: '#ef4444', fillColor: '#ef4444', fillOpacity: 1, radius: 5 }).addTo(detailMap);
+            }
+            
+            // Try get real location
+            if (navigator.geolocation && latlngs.length <= 1) {
+                navigator.geolocation.getCurrentPosition(pos => {
+                    currentLat = pos.coords.latitude;
+                    currentLng = pos.coords.longitude;
+                    map.setView([currentLat, currentLng], 19);
+                    latlngs = [[currentLat, currentLng]];
+                    trajectoryPolyline.setLatLngs(latlngs);
+                    if (currentMarker) currentMarker.setLatLng([currentLat, currentLng]);
+                }, () => {
+                    // Fallback to last known history location if available
+                    if (historyData.length > 0) {
+                        const lastRecord = historyData[0];
+                        if (lastRecord.points && lastRecord.points.length > 0) {
+                            const lastPoint = lastRecord.points[lastRecord.points.length - 1];
+                            currentLat = lastPoint[0];
+                            currentLng = lastPoint[1];
+                            map.setView([currentLat, currentLng], 19);
+                            latlngs = [[currentLat, currentLng]];
+                            trajectoryPolyline.setLatLngs(latlngs);
+                            if (currentMarker) currentMarker.setLatLng([currentLat, currentLng]);
+                        }
+                    }
+                }, {enableHighAccuracy: true, timeout: 5000});
+            } else if (latlngs.length === 0) {
+                latlngs = [[currentLat, currentLng]];
+            }
+        }
+
+        function locateCurrentPosition() {
+            if (map && currentLat && currentLng) {
+                // Fly to current position with appropriate zoom level
+                map.flyTo([currentLat, currentLng], 19, {
+                    animate: true,
+                    duration: 0.8 // smooth animation duration
+                });
+                showToast("已定位到当前位置");
+            } else {
+                showToast("无法获取当前位置");
+            }
+        }
+
+        function startApp() {
+            initMaps();
+            if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+                DeviceMotionEvent.requestPermission().then(permissionState => {
+                    if (permissionState === 'granted') {
+                        initSensors();
+                    } else {
+                        showToast("需要传感器权限才能绘出真实轨迹");
+                    }
+                }).catch(console.error);
+            } else {
+                initSensors();
+            }
+            
+            showScreen('screen-main');
+            startTime = Date.now();
+        }
+
+        function initSensors() {
+            window.addEventListener('devicemotion', handleMotion, true);
+            window.addEventListener('deviceorientation', handleOrientation, true);
+            showToast("传感器已连接，AHRS矩阵计算中");
+        }
+
+        function getRotationMatrix(alpha, beta, gamma) {
+            // Converts Euler angles to Rotation Matrix (W3C standard)
+            const deg2rad = Math.PI / 180;
+            const cX = Math.cos(beta * deg2rad), sX = Math.sin(beta * deg2rad);
+            const cY = Math.cos(gamma * deg2rad), sY = Math.sin(gamma * deg2rad);
+            const cZ = Math.cos(alpha * deg2rad), sZ = Math.sin(alpha * deg2rad);
+            
+            return [
+                [cZ * cY - sZ * sX * sY, -cX * sZ, cY * sZ * sX + cZ * sY],
+                [cY * sZ + cZ * sX * sY, cZ * cX, sZ * sY - cZ * cY * sX],
+                [-cX * sY, sX, cX * cY]
+            ];
+        }
+
+        function handleOrientation(event) {
+            if (!isTracking) return;
+            if (event.alpha !== null) {
+                euler.alpha = event.alpha;
+                euler.beta = event.beta;
+                euler.gamma = event.gamma;
+                // Webkit provides true north heading, otherwise fallback to alpha
+                heading = event.webkitCompassHeading || (360 - event.alpha);
+                
+                let headingElem = document.getElementById('posture-heading');
+                if (headingElem) headingElem.innerText = Math.round(heading);
+                
+                const arrowContainer = document.getElementById('user-arrow-container');
+                if (arrowContainer) {
+                    arrowContainer.style.transform = `rotate(${heading}deg)`;
+                }
+                
+                updateCompassUI(heading, event.beta, event.gamma);
+            }
+        }
+
+        function handleMotion(event) {
+            if (!isTracking) return;
+            let accG = event.accelerationIncludingGravity;
+            let gyro = event.rotationRate;
+            
+            if (accG) {
+                // 1. MEMS 原始数据 (Body Frame)
+                let ax = accG.x || 0;
+                let ay = accG.y || 0;
+                let az = accG.z || 0;
+                
+                let gx = gyro ? (gyro.alpha || 0) : 0;
+                let gy = gyro ? (gyro.beta || 0) : 0;
+                let gz = gyro ? (gyro.gamma || 0) : 0;
+                
+                // 更新实时图表
+                if (document.getElementById('screen-sensors').classList.contains('active')) {
+                    updateCharts(ax, ay, az, gx, gy, gz);
+                }
+                
+                // 2. 姿态解算 (Navigation Frame) - 仅供水平/航向参考
+                let R = getRotationMatrix(euler.alpha, euler.beta, euler.gamma);
+                let a_earth_x = R[0][0]*ax + R[0][1]*ay + R[0][2]*az;
+                let a_earth_y = R[1][0]*ax + R[1][1]*ay + R[1][2]*az;
+                let a_horiz = Math.sqrt(a_earth_x*a_earth_x + a_earth_y*a_earth_y) / 9.81;
+                
+                // 计算合加速度幅值 (不受手机姿态影响，最鲁棒的步伐检测依据)
+                let a_mag = Math.sqrt(ax*ax + ay*ay + az*az) / 9.81;
+                
+                let vaccelElem = document.getElementById('posture-vaccel');
+                if (vaccelElem) vaccelElem.innerText = a_mag.toFixed(2);
+                
+                // 记录加速度的最值 (用于步长模型)
+                if (a_horiz > aHorizMax) aHorizMax = a_horiz;
+                if (a_horiz < aHorizMin) aHorizMin = a_horiz;
+
+                if (a_mag > aVertMax) aVertMax = a_mag;
+                if (a_mag < aVertMin) aVertMin = a_mag;
+
+                let now = Date.now();
+                // 3. 改进的步伐检测 (基于合加速度幅值，彻底解决手机姿态导致的失效)
+                if (a_mag > stepThreshold && lastAccelZ <= stepThreshold && (now - lastStepTime) > 300) {
+                    steps++;
+                    
+                    // 计算步频
+                    if (lastStepTime > 0) {
+                        let dt = now - lastStepTime;
+                        stepFreq = Math.round(60000 / dt);
+                        if (stepFreq > 200) stepFreq = 200; 
+                        document.getElementById('stat-freq').innerText = stepFreq;
+                    }
+                    
+                    // 4. 基于选定的模型进行步长估计
+                    let dynamicStepLength = 0.5;
+                    const strideModel = document.querySelector('input[name="stride"]:checked')?.value || 'horizontal';
+                    
+                    if (strideModel === 'weinberg') {
+                        // Weinberg 模型: 基于垂直加速度最大最小差值
+                        dynamicStepLength = weinbergK * Math.pow(Math.max(0, aVertMax - aVertMin), 0.25) * 1.5; 
+                    } else if (strideModel === 'kim') {
+                        // Kim 模型: 基于垂直加速度均值，平滑性较好 (示例实现)
+                        let avgAccel = (Math.abs(aVertMax) + Math.abs(aVertMin)) / 2;
+                        let kimK = 0.35; // Kim 模型系数
+                        dynamicStepLength = kimK * Math.cbrt(avgAccel) * 1.5;
+                    } else if (strideModel === 'horizontal') {
+                        // 水平合加速度模型: 基于导航坐标系下水平加速度极差
+                        let horizK = 0.5; // 水平模型经验系数
+                        dynamicStepLength = horizK * Math.pow(Math.max(0, aHorizMax - aHorizMin), 0.25) * 1.5;
+                    }
+                    
+                    if (isNaN(dynamicStepLength) || dynamicStepLength < 0.3) dynamicStepLength = 0.5;
+                    if (dynamicStepLength > 1.2) dynamicStepLength = 1.2;
+                    distance += dynamicStepLength;
+                    
+                    let stepLenElem = document.getElementById('stat-steplen');
+                    if (stepLenElem) stepLenElem.innerText = dynamicStepLength.toFixed(2);
+                    
+                    // 5. 行人航向估计
+                    let rad = heading * Math.PI / 180;
+                    
+                    // 6. 位置更新 (结合步长、航向与步伐事件)
+                    let dx = Math.sin(rad) * dynamicStepLength;
+                    let dy = Math.cos(rad) * dynamicStepLength;
+                    
+                    let dLat = dy / 111320;
+                    let dLng = dx / (111320 * Math.cos(currentLat * Math.PI / 180));
+                    
+                    currentLat += dLat;
+                    currentLng += dLng;
+                    
+                    latlngs.push([currentLat, currentLng]);
+                    
+                    if (map) {
+                        trajectoryPolyline.setLatLngs(latlngs);
+                        currentMarker.setLatLng([currentLat, currentLng]);
+                        map.panTo([currentLat, currentLng], {animate: true});
+                    }
+                    
+                    updateStatsUI();
+                    
+                    // 重置自适应窗口
+                    aVertMax = -999; aVertMin = 999;
+                    aHorizMax = -999; aHorizMin = 999;
+                    lastStepTime = now;
+                }
+                lastAccelZ = a_mag;
+            }
+        }
+
+        function updateCompassUI(yaw, pitch, roll) {
+            const needle = document.getElementById('compass-needle');
+            if (needle) needle.style.transform = `rotate(${yaw}deg)`;
+            const yawText = document.getElementById('compass-yaw-text');
+            if (yawText) yawText.innerText = `${yaw.toFixed(1)}°`;
+            
+            const pitchText = document.getElementById('compass-pitch-text');
+            if (pitchText) pitchText.innerText = `${pitch ? pitch.toFixed(1) : 0}°`;
+            const rollText = document.getElementById('compass-roll-text');
+            if (rollText) rollText.innerText = `${roll ? roll.toFixed(1) : 0}°`;
+            
+            const pitchHorizon = document.getElementById('pitch-horizon');
+            if (pitchHorizon && pitch) pitchHorizon.style.transform = `translateY(${pitch}%)`;
+            
+            const rollHorizon = document.getElementById('roll-horizon');
+            if (rollHorizon && roll) rollHorizon.style.transform = `rotate(${roll}deg)`;
+            const rollHorizonLine = document.getElementById('roll-horizon-line');
+            if (rollHorizonLine && roll) rollHorizonLine.style.transform = `rotate(${roll}deg)`;
+        }
+
+        function updateStatsUI() {
+            document.getElementById('stat-steps').innerText = steps;
+            document.getElementById('stat-dist').innerText = Math.round(distance);
+        }
+
+        function resetTrajectory() {
+            if (steps === 0 && latlngs.length <= 1) {
+                showToast("当前没有轨迹可保存");
+                return;
+            }
+            saveToHistory();
+            
+            steps = 0;
+            distance = 0;
+            latlngs = [[currentLat, currentLng]];
+            startTime = Date.now();
+            
+            if (map) {
+                trajectoryPolyline.setLatLngs(latlngs);
+                currentMarker.setLatLng([currentLat, currentLng]);
+            }
+            
+            updateStatsUI();
+            showToast("轨迹已重置并保存至历史记录");
+        }
+
+        function saveToHistory() {
+            const now = new Date();
+            const timeStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+            const durationMs = Date.now() - startTime;
+            const minutes = Math.floor(durationMs / 60000);
+            const seconds = Math.floor((durationMs % 60000) / 1000);
+            const durationStr = `${minutes}m ${seconds}s`;
+            const distKm = (distance / 1000).toFixed(2);
+            
+            historyData.unshift({
+                id: Date.now(),
+                time: timeStr,
+                duration: durationStr,
+                steps: steps,
+                distKm: distKm,
+                points: [...latlngs]
+            });
+            localStorage.setItem('pdr_history', JSON.stringify(historyData));
+            renderHistory();
+        }
+
+        function renderHistory() {
+            const list = document.getElementById('history-list');
+            const empty = document.getElementById('history-empty');
+            
+            if (historyData.length === 0) {
+                list.classList.add('hidden');
+                empty.classList.remove('hidden');
+                return;
+            }
+            
+            list.classList.remove('hidden');
+            empty.classList.add('hidden');
+            list.innerHTML = '';
+            
+            historyData.forEach(item => {
+                const div = document.createElement('div');
+                div.className = "glass-panel rounded-2xl p-4 flex gap-4 relative overflow-hidden group cursor-pointer hover:bg-white/5 transition-colors";
+                div.onclick = () => viewHistoryDetail(item.id);
+                div.innerHTML = `
+                    <div class="w-16 h-16 bg-[#0a0f18] rounded-xl border border-white/5 flex items-center justify-center">
+                        <i class="fa-solid fa-map-location-dot text-2xl text-cyan-400"></i>
+                    </div>
+                    <div class="flex-1 flex flex-col justify-center pointer-events-none">
+                        <div class="text-sm font-bold text-white mb-1">${item.time}</div>
+                        <div class="text-xs text-gray-400 flex gap-3">
+                            <span><i class="fa-regular fa-clock"></i> ${item.duration}</span>
+                            <span><i class="fa-solid fa-shoe-prints"></i> ${item.steps}步</span>
+                        </div>
+                        <div class="text-xs text-cyan-400 mt-1 font-tech">${item.distKm} km</div>
+                    </div>
+                `;
+                list.appendChild(div);
+            });
+        }
+
+        let currentDetailId = null;
+
+        function viewHistoryDetail(id) {
+            currentDetailId = id;
+            const item = historyData.find(i => i.id === id);
+            if (!item) return;
+            
+            document.getElementById('detail-time').innerText = item.time;
+            document.getElementById('detail-dist').innerText = item.distKm;
+            document.getElementById('detail-duration').innerText = item.duration;
+            document.getElementById('detail-steps').innerText = item.steps;
+            
+            if (detailMap && item.points.length > 0) {
+                detailPolyline.setLatLngs(item.points);
+                detailStartMarker.setLatLng(item.points[0]);
+                detailEndMarker.setLatLng(item.points[item.points.length - 1]);
+                detailMap.fitBounds(detailPolyline.getBounds(), {padding: [20, 20]});
+            }
+            
+            showScreen('screen-history-detail');
+        }
+
+        function downloadCSV(content, filename) {
+            const blob = new Blob(["\uFEFF" + content], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement("a");
+            const url = URL.createObjectURL(blob);
+            link.setAttribute("href", url);
+            link.setAttribute("download", filename);
+            link.style.visibility = 'hidden';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            showToast("导出成功");
+        }
+
+        function exportSingleHistoryCSV() {
+            if (!currentDetailId) return;
+            const item = historyData.find(i => i.id === currentDetailId);
+            if (!item) return;
+            
+            let csvContent = "Time,Duration,Steps,Distance(km),Latitude,Longitude\n";
+            if (item.points && item.points.length > 0) {
+                item.points.forEach(point => {
+                    csvContent += `${item.time},${item.duration},${item.steps},${item.distKm},${point[0]},${point[1]}\n`;
+                });
+            } else {
+                csvContent += `${item.time},${item.duration},${item.steps},${item.distKm},,\n`;
+            }
+            
+            downloadCSV(csvContent, `trajectory_${item.id}.csv`);
+        }
+
+        function exportAllHistoryCSV() {
+            if (historyData.length === 0) {
+                showToast("没有可导出的历史记录");
+                return;
+            }
+            
+            let csvContent = "TrackID,Time,Duration,Steps,Distance(km),Latitude,Longitude\n";
+            historyData.forEach(item => {
+                if (item.points && item.points.length > 0) {
+                    item.points.forEach(point => {
+                        csvContent += `${item.id},${item.time},${item.duration},${item.steps},${item.distKm},${point[0]},${point[1]}\n`;
+                    });
+                } else {
+                    csvContent += `${item.id},${item.time},${item.duration},${item.steps},${item.distKm},,\n`;
+                }
+            });
+            
+            downloadCSV(csvContent, `all_trajectories_${Date.now()}.csv`);
+        }
+
+        function loadSettings() {
+            const settings = JSON.parse(localStorage.getItem('pdr_settings'));
+            if (settings) {
+                if (settings.attitude) {
+                    const el = document.querySelector(`input[name="attitude"][value="${settings.attitude}"]`);
+                    if (el) el.checked = true;
+                }
+                if (settings.stride) {
+                    const el = document.querySelector(`input[name="stride"][value="${settings.stride}"]`);
+                    if (el) el.checked = true;
+                }
+                if (settings.accelVar) {
+                    const range = document.getElementById('accel-var-range');
+                    range.value = settings.accelVar;
+                    document.getElementById('accel-var-val').innerText = (settings.accelVar/100).toFixed(2) + ' m/s²';
+                }
+                if (settings.gyroMag) {
+                    const range = document.getElementById('gyro-mag-range');
+                    range.value = settings.gyroMag;
+                    document.getElementById('gyro-mag-val').innerText = (settings.gyroMag/100).toFixed(2) + ' rad/s';
+                }
+                if (settings.magToggle !== undefined) {
+                    document.getElementById('toggle1').checked = settings.magToggle;
+                }
+            }
+            // Load history data for UI initially
+            if (historyData.length > 0) {
+                renderHistory();
+            }
+        }
+        
+        function saveSettings() {
+            const settings = {
+                attitude: document.querySelector('input[name="attitude"]:checked')?.value || 'madgwick',
+                stride: document.querySelector('input[name="stride"]:checked')?.value || 'kim',
+                accelVar: document.getElementById('accel-var-range').value,
+                gyroMag: document.getElementById('gyro-mag-range').value,
+                magToggle: document.getElementById('toggle1').checked
+            };
+            localStorage.setItem('pdr_settings', JSON.stringify(settings));
+        }
+
+        // --- Auto Save on Exit ---
+        window.addEventListener('beforeunload', function() {
+            if (steps > 0 || latlngs.length > 1) {
+                saveToHistory();
+            }
+        });
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState === 'hidden' && (steps > 0 || latlngs.length > 1)) {
+                // Also try to save when app goes to background
+                saveToHistory();
+                // Reset session variables so if user returns, it's a new session,
+                // but keep currentLat/currentLng so it starts from the last known point
+                steps = 0;
+                distance = 0;
+                latlngs = [[currentLat, currentLng]];
+                startTime = Date.now();
+                if (map) trajectoryPolyline.setLatLngs(latlngs);
+                updateStatsUI();
+            }
+        });
+
+        // --- Mode Selection Logic ---
+        function handleModeChange(selectElement) {
+            const value = selectElement.value;
+            const icon = document.getElementById('mode-icon');
+            
+            // Unfunded vehicles logic
+            if (value === 'plane' || value === 'rocket' || value === 'spaceship') {
+                showToast('刀盾目前没有资金购买这些载具QAQ');
+                // Revert to previous valid selection (we'll just force it to 'walk' for simplicity in prototype)
+                selectElement.value = 'walk';
+                icon.className = 'fa-solid fa-person-walking text-cyan-400 text-sm';
+                return;
+            }
+
+            // Valid selections
+            if (value === 'walk') {
+                icon.className = 'fa-solid fa-person-walking text-cyan-400 text-sm';
+            } else if (value === 'car') {
+                icon.className = 'fa-solid fa-car text-cyan-400 text-sm';
+            } else if (value === 'moto') {
+                icon.className = 'fa-solid fa-motorcycle text-cyan-400 text-sm';
+            } else if (value === 'boat') {
+                icon.className = 'fa-solid fa-ship text-cyan-400 text-sm';
+            }
+        }
+
+        function showScreen(screenId) {
+            document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+            document.getElementById(screenId).classList.add('active');
+            
+            if (screenId === 'screen-sensors' && !accelChart) {
+                setTimeout(initCharts, 100);
+            }
+            
+            // Fix map rendering when container becomes visible
+            if (screenId === 'screen-main' && map) {
+                setTimeout(() => map.invalidateSize(), 100);
+            }
+            if (screenId === 'screen-history-detail' && detailMap) {
+                setTimeout(() => detailMap.invalidateSize(), 100);
+            }
+        }
+
+        function toggleTracking(btn) {
+            const dot = document.getElementById('current-pos-dot');
+            if (btn.innerText.trim() === '停止') {
+                isTracking = false;
+                btn.innerText = '开始';
+                btn.classList.remove('from-blue-600', 'to-cyan-500', 'shadow-[0_0_15px_rgba(6,182,212,0.3)]');
+                btn.classList.add('from-green-600', 'to-emerald-500', 'shadow-[0_0_15px_rgba(16,185,129,0.3)]');
+                if(dot) dot.classList.remove('pulse-dot');
+                showToast('轨迹推算已暂停');
+            } else {
+                isTracking = true;
+                btn.innerText = '停止';
+                btn.classList.remove('from-green-600', 'to-emerald-500', 'shadow-[0_0_15px_rgba(16,185,129,0.3)]');
+                btn.classList.add('from-blue-600', 'to-cyan-500', 'shadow-[0_0_15px_rgba(6,182,212,0.3)]');
+                if(dot) dot.classList.add('pulse-dot');
+                showToast('轨迹推算已继续');
+            }
+        }
+
+        function toggleEmptyState() {
+            const list = document.getElementById('history-list');
+            const empty = document.getElementById('history-empty');
+            if (list.classList.contains('hidden')) {
+                list.classList.remove('hidden');
+                empty.classList.add('hidden');
+            } else {
+                list.classList.add('hidden');
+                empty.classList.remove('hidden');
+            }
+        }
+
+        function startCalibration() {
+            const btn = document.getElementById('start-calib-btn');
+            const statusText = document.getElementById('calib-status-text');
+            const accelBar = document.getElementById('calib-accel-bar');
+            const gyroBar = document.getElementById('calib-gyro-bar');
+            const accelText = document.getElementById('calib-accel-text');
+            const gyroText = document.getElementById('calib-gyro-text');
+
+            if(btn.innerText.trim() === '开始校准') {
+                // Reset states
+                accelBar.style.width = '0%';
+                gyroBar.style.width = '0%';
+                accelText.innerHTML = '0%';
+                gyroText.innerHTML = '0%';
+                accelText.className = 'text-gray-400';
+                gyroText.className = 'text-gray-400';
+                
+                statusText.innerText = '正在校准，请保持静止...';
+                statusText.className = 'text-sm text-cyan-400 tracking-widest text-center mt-2 animate-pulse';
+                btn.innerText = '校准中...';
+                btn.classList.add('opacity-50', 'pointer-events-none');
+
+                // Simulate progress
+                setTimeout(() => {
+                    accelBar.style.width = '100%';
+                    accelText.innerHTML = '<i class="fa-solid fa-check"></i> 100%';
+                    accelText.className = 'text-green-400';
+                }, 1000);
+
+                setTimeout(() => {
+                    gyroBar.style.width = '100%';
+                    gyroText.innerHTML = '<i class="fa-solid fa-check"></i> 100%';
+                    gyroText.className = 'text-green-400';
+                    gyroBar.classList.replace('bg-blue-500', 'bg-green-500');
+                    gyroBar.classList.replace('shadow-[0_0_10px_#3b82f6]', 'shadow-[0_0_10px_#22c55e]');
+                    
+                    statusText.innerText = '校准完成';
+                    statusText.className = 'text-sm text-green-400 font-bold tracking-widest text-center mt-2';
+                    btn.innerText = '重新校准';
+                    btn.classList.remove('opacity-50', 'pointer-events-none');
+                    showToast('传感器校准成功');
+                }, 2500);
+            } else {
+                // If it says "重新校准", recursive call to reset and start
+                btn.innerText = '开始校准';
+                startCalibration();
+            }
+        }
+
+        function restoreDefaults() {
+            // Restore Radio buttons
+            document.querySelector('input[name="attitude"][value="madgwick"]').checked = true; // Madgwick
+            document.querySelector('input[name="stride"][value="horizontal"]').checked = true; // Horizontal
+            
+            // Restore Range Inputs
+            const accelRange = document.getElementById('accel-var-range');
+            accelRange.value = 15;
+            document.getElementById('accel-var-val').innerText = '0.15 m/s²';
+            
+            const gyroRange = document.getElementById('gyro-mag-range');
+            gyroRange.value = 40;
+            document.getElementById('gyro-mag-val').innerText = '0.40 rad/s';
+
+            // Restore Toggle
+            document.getElementById('toggle1').checked = true;
+
+            showToast('参数已恢复默认设置');
+        }
+
+        // Chart references
+        let accelChart, gyroChart;
+        let chartDataPoints = 100;
+        let accelData = { x: new Array(chartDataPoints).fill(0), y: new Array(chartDataPoints).fill(0), z: new Array(chartDataPoints).fill(0) };
+        let gyroData = { x: new Array(chartDataPoints).fill(0), y: new Array(chartDataPoints).fill(0), z: new Array(chartDataPoints).fill(0) };
+
+        function initCharts() {
+            if(!document.getElementById('accelChart')) return;
+            const commonOptions = {
+                responsive: true, maintainAspectRatio: false, animation: false,
+                elements: { point: { radius: 0 }, line: { borderWidth: 1.5, tension: 0.4 } },
+                scales: { 
+                    x: { display: false }, 
+                    y: { 
+                        display: true, 
+                        grid: { color: 'rgba(255,255,255,0.05)' }, 
+                        ticks: { color: 'rgba(255,255,255,0.3)', font: { size: 9 } } 
+                    } 
+                },
+                plugins: { legend: { display: false } }
+            };
+            const labels = Array.from({length: chartDataPoints}, (_, i) => i);
+
+            accelChart = new Chart(document.getElementById('accelChart').getContext('2d'), {
+                type: 'line', 
+                data: { 
+                    labels: labels, 
+                    datasets: [ 
+                        { borderColor: '#ef4444', data: accelData.x }, 
+                        { borderColor: '#22c55e', data: accelData.y }, 
+                        { borderColor: '#3b82f6', data: accelData.z } 
+                    ] 
+                }, 
+                options: commonOptions
+            });
+            gyroChart = new Chart(document.getElementById('gyroChart').getContext('2d'), {
+                type: 'line', 
+                data: { 
+                    labels: labels, 
+                    datasets: [ 
+                        { borderColor: '#ef4444', data: gyroData.x }, 
+                        { borderColor: '#22c55e', data: gyroData.y }, 
+                        { borderColor: '#3b82f6', data: gyroData.z } 
+                    ] 
+                }, 
+                options: commonOptions
+            });
+        }
+
+        function updateCharts(accX, accY, accZ, gyroX, gyroY, gyroZ) {
+            if (!accelChart || !gyroChart) return;
+            
+            // Shift data
+            accelData.x.shift(); accelData.x.push(accX);
+            accelData.y.shift(); accelData.y.push(accY);
+            accelData.z.shift(); accelData.z.push(accZ);
+            
+            gyroData.x.shift(); gyroData.x.push(gyroX);
+            gyroData.y.shift(); gyroData.y.push(gyroY);
+            gyroData.z.shift(); gyroData.z.push(gyroZ);
+            
+            // Update charts
+            accelChart.update();
+            gyroChart.update();
+        }
+    </script>
+</body>
+</html>
